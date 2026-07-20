@@ -6,4 +6,4 @@ tests:
     terminals: 100
     duration: 900
     ready_wait: 900
-    rate: 9250
+    rate: 1000

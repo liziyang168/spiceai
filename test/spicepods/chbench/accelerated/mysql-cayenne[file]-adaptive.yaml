@@ -28,8 +28,8 @@ name: mysql-cayenne[file]-adaptive
 # comparison isolates the effect of adaptive tuning, not caching/history overhead.
 
 mysql_connection_params: &mysql_params
-  mysql_host: 127.0.0.1
-  mysql_tcp_port: 13306
+  mysql_host: ${env:CHBENCH_MYSQL_HOST}
+  mysql_tcp_port: 3306
   mysql_db: chbench
   mysql_user: bench
   mysql_pass: bench
