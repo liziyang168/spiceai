@@ -27,8 +27,8 @@ name: mysql-cayenne[file]-adaptive
 # comparison isolates the effect of adaptive tuning, not caching/history overhead.
 
 mysql_connection_params: &mysql_params
-  mysql_host: ${env:CHBENCH_MYSQL_HOST}
-  mysql_tcp_port: 3306
+  mysql_host: 127.0.0.1
+  mysql_tcp_port: 13306
   mysql_db: chbench
   mysql_user: bench
   mysql_pass: bench
@@ -65,7 +65,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1001'
     acceleration: &cayenne_accel
       enabled: true
@@ -88,7 +88,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1002'
     acceleration: *cayenne_accel
 
@@ -97,7 +97,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1003'
     acceleration: *cayenne_accel
 
@@ -106,7 +106,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1004'
     acceleration: *cayenne_accel
 
@@ -115,7 +115,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1005'
     acceleration: *cayenne_accel
 
@@ -124,7 +124,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1006'
     acceleration: *cayenne_accel
 
@@ -133,7 +133,7 @@ datasets:
     schema_inference: extended
     params:
       <<: *mysql_params
-      mysql_replication_snapshot_mode: auto
+      replication_snapshot_mode: auto
       mysql_replication_server_id: '1007'
     acceleration: *cayenne_accel
 

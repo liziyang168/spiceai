@@ -18,7 +18,7 @@ limitations under the License.
 //!
 //! Runs after the row-count gate (`correctness::verify_after_drain`) confirms
 //! convergence. Executes each CH-benCH analytical query against both the source
-//! Postgres and Spice, comparing results with the existing
+//! engine (Postgres or `MySQL`) and Spice, comparing results with the existing
 //! `validate_with_expected_batches` comparator (schema equivalence + 5%
 //! numeric tolerance).
 
@@ -332,15 +332,16 @@ async fn evaluate_query(
     // expressions return Int32 vs Decimal128(38,0)). Cast Spice columns
     // to the source's per-column type so the string-based row comparator
     // sees consistent encodings before comparing values.
-    // Remember which columns Spice produced as floating point *before*
-    // alignment casts them to the source schema (Float64 avg() → Decimal128
-    // NUMERIC), so the numeric check below keeps the relative float
-    // tolerance for those approximate columns instead of demoting them to
-    // the exact integer/decimal path.
-    let actual_source_floats = actual
-        .first()
-        .map(compare::float_columns)
-        .unwrap_or_default();
+    // Columns to compare with relative float tolerance, captured pre-alignment
+    // (alignment casts actual to the source schema, erasing the signal). Covers
+    // Spice floats and avg()/division decimals whose scale is inflated past
+    // MONEY_SCALE (e.g. chbench_q1 avg_amount, where source and DataFusion both
+    // produce scale-6 NUMERIC and a 1-ULP rounding difference must not DIVERGE);
+    // exact sums/counts stay on the exact path.
+    let approximate_cols = match (expected.first(), actual.first()) {
+        (Some(e0), Some(a0)) => compare::approximate_columns(e0, a0),
+        _ => Vec::new(),
+    };
 
     let actual = match align_to_expected_schema(&actual, &expected) {
         Ok(batches) => batches,
@@ -380,7 +381,7 @@ async fn evaluate_query(
                 // and surface the magnitude either way.
                 match (expected_sorted.first(), actual_sorted.first()) {
                     (Some(e0), Some(a0)) => {
-                        let delta = compare::numeric_delta(e0, a0, &actual_source_floats);
+                        let delta = compare::numeric_delta(e0, a0, &approximate_cols);
                         if delta.exceeded {
                             (
                                 Outcome::Divergence(format!(
