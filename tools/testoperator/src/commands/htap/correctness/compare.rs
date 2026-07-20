@@ -62,6 +62,13 @@ pub struct NumericDelta {
     /// Column / row / values of the worst *offending* cell, for the failure
     /// message. `None` when nothing exceeded tolerance.
     pub worst: Option<String>,
+    /// Row index (0-based) of the worst offending cell, so callers can print
+    /// the surrounding rows for context. `None` when nothing exceeded tolerance
+    /// (or the divergence was a whole-column cast failure with no single row).
+    pub worst_row: Option<usize>,
+    /// Column index of the worst offending cell, matching `worst_row`. `None`
+    /// under the same conditions.
+    pub worst_col: Option<usize>,
 }
 
 /// Whether a column's values are compared numerically by [`numeric_delta`]
@@ -199,18 +206,14 @@ fn cast_pair_to_f64(e_col: &dyn Array, a_col: &dyn Array) -> Option<(Float64Arra
 /// cross-engine text collation / timestamp precision make their MIN/MAX
 /// unreliable to compare directly.
 ///
-/// `actual_source_floats[i]` flags columns the actual engine produced as
-/// floating point *before* any schema alignment (see [`float_columns`]). A
-/// column is compared with the relative float tolerance when either side's
-/// compared type is float *or* its pre-alignment actual type was — so an
-/// `avg()` that Spice computed in `Float64` but the gate cast to the source's
-/// `Decimal128` keeps its tolerance, while money sums and counts (decimal /
-/// integer on both sides, and never float pre-alignment) stay exact.
+/// `approximate[i]` flags columns to compare with relative float tolerance
+/// instead of exactly: the fingerprint gate passes [`float_columns`], the
+/// analytical gate [`approximate_columns`]. Sums and counts stay exact.
 #[must_use]
 pub fn numeric_delta(
     expected: &RecordBatch,
     actual: &RecordBatch,
-    actual_source_floats: &[bool],
+    approximate: &[bool],
 ) -> NumericDelta {
     let mut out = NumericDelta::default();
     let mut worst_rel = 0.0_f64;
@@ -231,7 +234,7 @@ pub fn numeric_delta(
         }
         let float_col = is_float(e_col.data_type())
             || is_float(a_col.data_type())
-            || actual_source_floats.get(c).copied().unwrap_or(false);
+            || approximate.get(c).copied().unwrap_or(false);
         let col_name = field.name();
 
         // Both columns are numeric, so casting to f64 should always succeed.
@@ -279,6 +282,8 @@ pub fn numeric_delta(
                         "{col_name}[row {r}]: expected {ev}, actual {av} (rel {:.6}%)",
                         rel * 100.0
                     ));
+                    out.worst_row = Some(r);
+                    out.worst_col = Some(c);
                 }
             }
         }
@@ -328,6 +333,10 @@ mod tests {
         let d = numeric_delta(&e, &a, &float_columns(&a));
         assert!(d.exceeded, "any integer diff must exceed (exact tolerance)");
         assert!(d.worst.is_some());
+        // The offending cell's coordinates are surfaced so the gate can print
+        // the surrounding rows for context.
+        assert_eq!(d.worst_row, Some(0));
+        assert_eq!(d.worst_col, Some(0));
     }
 
     #[test]

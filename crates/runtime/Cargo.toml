@@ -135,6 +135,7 @@ rmcp = { workspace = true, optional = true, features = [
 runtime-acceleration = { path = "../runtime-acceleration" }
 runtime-api-types = { path = "../runtime-api-types" }
 runtime-async = { path = "../runtime-async" }
+runtime-checkpoint-api = { path = "../runtime-checkpoint-api" }
 runtime-metrics = { path = "../runtime-metrics" }
 runtime-auth = { path = "../runtime-auth" }
 runtime-cluster = { path = "../runtime-cluster" }
@@ -288,7 +289,6 @@ aws-secrets-manager = ["dep:aws-sdk-sts", "runtime-secrets/aws-secrets-manager"]
 azure-keyvault = ["runtime-secrets/azure-keyvault"]
 hashicorp_vault = ["runtime-secrets/hashicorp_vault"]
 bedrock = []
-clickhouse = ["db_connection_pool/clickhouse", "data_components/clickhouse"]
 cosmosdb = ["data_components/cosmosdb"]
 cuda = ["llms/cuda"]
 databricks = ["data_components/databricks", "dep:duration-parse"]
