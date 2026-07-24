@@ -277,13 +277,18 @@ pub fn build_change_batch(
 /// route it. A throwaway [`super::pgoutput::Decoder`] is used because the
 /// change decoders are structural (they don't consult the relation cache); the
 /// `relation` argument, not the decoder, drives typing and key detection.
-fn decode_raw_changes(relation: &Relation, raw: &[bytes::Bytes]) -> Result<Vec<DecodedChange>> {
+fn decode_raw_changes(
+    relation: &Relation,
+    raw: &[bytes::Bytes],
+    streaming: bool,
+) -> Result<Vec<DecodedChange>> {
     use super::pgoutput::{DecodedMessage, Decoder};
     let mut decoder = Decoder::new();
     // Lower bound on capacity (a PK-changing UPDATE grows the vec by one).
     let mut changes = Vec::with_capacity(raw.len());
     for msg in raw {
-        match decoder.decode(msg.clone())? {
+        // `streaming` messages carry a 4-byte subxid prefix the decoder strips.
+        match decoder.decode_message(msg.clone(), streaming)? {
             DecodedMessage::Insert { tuple, .. } => changes.push(DecodedChange {
                 op: ChangeOp::Create,
                 row: tuple,
@@ -329,6 +334,10 @@ pub struct PgChangeRows {
     relation: Relation,
     raw: Vec<bytes::Bytes>,
     source_commit_ts_ms: Option<i64>,
+    /// Whether the buffered messages came from a streamed (pgoutput v2+)
+    /// transaction and therefore carry a subtransaction-xid prefix the decoder
+    /// must strip. Threaded to [`decode_raw_changes`] at build time.
+    streaming: bool,
     /// Precomputed `num_rows_hint` (upper bound) and `encoded_len` so the
     /// consumer's coalescing/metric reads are O(1) rather than rescanning `raw`.
     row_hint: usize,
@@ -342,6 +351,7 @@ impl PgChangeRows {
         relation: Relation,
         raw: Vec<bytes::Bytes>,
         source_commit_ts_ms: Option<i64>,
+        streaming: bool,
     ) -> Self {
         // Computed once here (per commit-per-relation) so the metadata accessors
         // are O(1): the consumer calls them on the coalescing/metric hot path,
@@ -371,6 +381,7 @@ impl PgChangeRows {
             relation,
             raw,
             source_commit_ts_ms,
+            streaming,
             row_hint,
             byte_len,
         }
@@ -442,11 +453,12 @@ impl ChangeRows for PgChangeRows {
     }
 
     fn build(self: Box<Self>) -> Result<ChangeBatch, ChangeBatchError> {
-        let changes = decode_raw_changes(&self.relation, &self.raw).map_err(|e| {
-            ChangeBatchError::DeferredBuild {
-                message: e.to_string(),
-            }
-        })?;
+        let changes =
+            decode_raw_changes(&self.relation, &self.raw, self.streaming).map_err(|e| {
+                ChangeBatchError::DeferredBuild {
+                    message: e.to_string(),
+                }
+            })?;
         build_change_batch(&self.schema, &self.relation, &changes)
             .map(|b| b.with_source_commit_ts_ms(self.source_commit_ts_ms))
             .map_err(|e| ChangeBatchError::DeferredBuild {
@@ -3213,7 +3225,7 @@ mod raw_decode_tests {
             row: tuple(&["2", "b"]),
         });
 
-        let raw_changes = decode_raw_changes(&rel, &raw).expect("raw decode");
+        let raw_changes = decode_raw_changes(&rel, &raw, false).expect("raw decode");
         // insert + (delete-old-key + upsert-new) + delete
         assert_eq!(
             raw_changes.len(),
@@ -3249,7 +3261,7 @@ mod raw_decode_tests {
             row: TupleData { columns: vec![] },
         });
 
-        let raw_changes = decode_raw_changes(&rel, &raw).expect("raw decode");
+        let raw_changes = decode_raw_changes(&rel, &raw, false).expect("raw decode");
         // A non-PK update is a single upsert row (no delete-of-old-key).
         assert_eq!(
             raw_changes.len(),
@@ -3265,7 +3277,7 @@ mod raw_decode_tests {
     #[test]
     fn pgchangerows_metadata_is_answered_without_decoding() {
         // is_empty is exact; num_rows_hint is an upper bound (+1 per UPDATE).
-        let empty = PgChangeRows::new(schema(), relation(), vec![], Some(7));
+        let empty = PgChangeRows::new(schema(), relation(), vec![], Some(7), false);
         assert!(empty.is_empty());
         assert_eq!(empty.num_rows_hint(), 0);
 
@@ -3277,6 +3289,7 @@ mod raw_decode_tests {
                 raw_update(&["1", "a"], &["2", "b"]),
             ],
             Some(7),
+            false,
         );
         assert!(!rows.is_empty());
         // 2 messages + 1 (the UPDATE may split) = 3 upper bound; actual after
